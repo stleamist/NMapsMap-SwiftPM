@@ -1,0 +1,85 @@
+name: Delete releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'Tags (JSON)'
+        required: true
+        default: '["release/1.0.0"]'
+
+jobs:
+  delete_releases:
+    name: Delete releases
+    runs-on: macos-latest
+    steps:
+      - name: List releases
+        id: list_releases
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const passedTags = JSON.parse(context.payload.inputs.tags);
+            const allReleases = (await github.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            })).data;
+            const releasesToDelete = passedTags.includes("**") ? allReleases : allReleases.filter(release => passedTags.includes(release.tag_name));
+            core.setOutput("releasesToDelete", releasesToDelete);
+            console.log("releasesToDelete: ", releasesToDelete);
+      
+      - name: Delete releases
+        if: ${{ steps.list_releases.outputs.releasesToDelete != '[]' }}
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const releasesToDelete = ${{ steps.list_releases.outputs.releasesToDelete }};
+            const deletingPromises = releasesToDelete.map((release) => {
+              return github.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id
+              });
+            });
+            const deletingResponses = await Promise.all(deletingPromises);
+            const result = deletingResponses.map((response) => ({ status: response.status, url: response.url }));
+            console.log(result);
+  
+  delete_tags:
+    name: Delete tags
+    needs: delete_releases
+    runs-on: macos-latest
+    steps:
+      - name: List tags
+        id: list_tags
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const passedTags = JSON.parse(context.payload.inputs.tags);
+            const allTags = (await github.repos.listTags({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            })).data;
+            const tagsToDelete = passedTags.includes("**") ? allTags : allTags.filter(tag => passedTags.includes(tag.name));
+            core.setOutput("tagsToDelete", tagsToDelete);
+            console.log("tagsToDelete: ", tagsToDelete);
+      
+      - name: Delete tags
+        if: ${{ steps.list_tags.outputs.tagsToDelete != '[]' }}
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const tagsToDelete = ${{ steps.list_tags.outputs.tagsToDelete }};
+            const deletingPromises = tagsToDelete.map((tag) => {
+              return github.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag.name}`
+              });
+            });
+            const deletingResponses = await Promise.all(deletingPromises);
+            const result = deletingResponses.map((response) => ({ status: response.status, url: response.url }));
+            console.log(result);

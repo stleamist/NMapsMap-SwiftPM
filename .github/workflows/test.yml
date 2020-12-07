@@ -1,0 +1,37 @@
+name: Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test1:
+    if: true
+    runs-on: macos-latest
+    steps:
+      - name: Set output
+        id: set_output
+        uses: actions/github-script@v3
+        with:
+          script: |
+            const sv = require("semver");
+            console.log(sv);
+  
+  test2:
+    if: false
+    runs-on: macos-latest
+    steps:
+      - name: Set output
+        id: set_output
+        uses: actions/github-script@v3
+        with:
+          script: |
+            core.setOutput("foo", "bar");
+            return "baz";
+      - name: Get input
+        id: get_input
+        uses: actions/github-script@v3
+        with:
+          script: |
+            console.log(`${{ steps.set_output.outputs.foo }}`);
+            console.log(core.getInput("foo"));
+            console.log(core.getInput("set_output"));

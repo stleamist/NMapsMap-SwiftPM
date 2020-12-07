@@ -1,0 +1,110 @@
+name: Fetch releases
+
+on:
+#   schedule:
+#    - cron:  '0 * * * *'
+  workflow_dispatch:
+
+env:
+  upstream_repo_owner: 'navermaps'
+  upstream_repo_name: 'NMapsMap'
+
+jobs:
+  check_pat:
+    name: Check secrets.PERSONAL_ACCESS_TOKEN
+    runs-on: macos-latest
+    steps:
+      - name: Check if secrets.PERSONAL_ACCESS_TOKEN exists
+        uses: actions/github-script@v3
+        with:
+          script: |
+            const patIsNotNull = ${{ secrets.PERSONAL_ACCESS_TOKEN != null }};
+            if (patIsNotNull) {
+              console.log("secrets.PERSONAL_ACCESS_TOKEN exists.")
+            } else {
+              // TODO: 오류 메시지에 해결 방법 제공하기
+              core.setFailed(
+                `secret.PERSONAL_ACCESS_TOKEN doesn't exist.
+                https://github.com/${context.repo.owner}/${context.repo.repo}/settings/secrets/actions/new`
+              );
+            }
+  
+  fetch_releases:
+    name: Fetch releases
+    needs: check_pat
+    runs-on: macos-latest
+    outputs:
+      removedTags: ${{ steps.diff_tags.outputs.removedTags }}
+      addedTags: ${{ steps.diff_tags.outputs.addedTags }}
+    steps:
+      - name: List tags on ${{ github.repository }}
+        id: list_tags_working
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const workingRepoTags = (await github.repos.listTags({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            })).data.reverse().map(tag => tag.name);
+            core.setOutput("workingRepoTags", workingRepoTags);
+            console.log("workingRepoTags: ", workingRepoTags);
+      
+      - name: List tags on ${{ env.upstream_repo_owner }}/${{ env.upstream_repo_name }}
+        id: list_tags_upstream
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const upstreamRepoTags = (await github.repos.listTags({
+              owner: '${{ env.upstream_repo_owner }}',
+              repo: '${{ env.upstream_repo_name }}'
+            })).data.reverse().map(tag => tag.name);
+            core.setOutput("upstreamRepoTags", upstreamRepoTags);
+            console.log("upstreamRepoTags: ", upstreamRepoTags);
+      
+      - name: Diff tags between ${{ github.repository }} and ${{ env.upstream_repo_owner }}/${{ env.upstream_repo_name }}
+        id: diff_tags
+        uses: actions/github-script@v3
+        with:
+          script: |
+            const workingRepoTags = ${{ steps.list_tags_working.outputs.workingRepoTags }};
+            const upstreamRepoTags = ${{ steps.list_tags_upstream.outputs.upstreamRepoTags }};
+            const removedTags = workingRepoTags.filter(tag => !upstreamRepoTags.includes(tag));
+            const addedTags = upstreamRepoTags.filter(tag => !workingRepoTags.includes(tag));
+            core.setOutput("removedTags", removedTags);
+            core.setOutput("addedTags", addedTags);
+            console.log("removedTags: ", removedTags);
+            console.log("addedTags: ", addedTags);
+  
+  trigger_workflow:
+    name: Trigger ${{ matrix.workflow.id }}
+    strategy:
+      max-parallel: 1
+      matrix:
+        workflow:
+          - id: 'delete-releases.yml'
+            tags: ${{ needs.fetch_releases.outputs.removedTags }}
+          - id: 'create-releases.yml'
+            tags: ${{ needs.fetch_releases.outputs.addedTags }}
+    needs: fetch_releases
+    # if: ${{ matrix.workflow.tags != '[]' }}
+    runs-on: macos-latest
+    steps:
+      - name: Create a workflow dispatch event with ${{ matrix.workflow.tags }}
+        if: ${{ matrix.workflow.tags != '[]' }}
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          script: |
+            const response = await github.request("POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches", {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.ref,
+              workflow_id: '${{ matrix.workflow.id }}',
+              inputs: {
+                tags: '${{ matrix.workflow.tags }}'
+              }
+            });
+            const result = { status: response.status, url: response.url };
+            console.log(result);

@@ -1,0 +1,145 @@
+name: Create releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'Tags (JSON)'
+        required: true
+        default: '["release/1.0.0"]'
+
+env:
+  upstream_repo_full_name: 'navermaps/NMapsMap'
+  git_config_user_name: 'github-actions'
+  git_config_user_email: '41898282+github-actions[bot]@users.noreply.github.com'
+
+# TODO: Assertion 추가하기
+jobs:
+  create-release:
+    name: Create a release
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        tag: ${{ fromJson(github.event.inputs.tags) }}
+    if: ${{ github.event.inputs.tags != null }}
+    runs-on: macos-latest
+    steps:
+      - name: Checkout ${{ github.repository }}
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.ref }}
+          path: working_repo
+      
+      - name: Checkout ${{ env.upstream_repo_full_name }} ${{ matrix.tag }}
+        uses: actions/checkout@v2
+        with:
+          repository: ${{ env.upstream_repo_full_name }}
+          ref: ${{ matrix.tag }}
+          path: upstream_repo
+          lfs: true
+          # 모든 브랜치와 태그의 히스토리를 가져온다.
+          # 그렇지 않으면 git describe --tags 명령어가 태그를 불러올 수 없다.
+          # fetch-depth: 0
+        
+      - name: Check architecture types in the binary
+        run: xcrun lipo upstream_repo/framework/NMapsMap.framework/NMapsMap -archs
+        
+      - name: Create a thin binary for iphoneos
+        run: |
+          mkdir -p binaries/iphoneos
+          cp -a upstream_repo/framework/NMapsMap.framework binaries/iphoneos/NMapsMap.framework
+          xcrun lipo binaries/iphoneos/NMapsMap.framework/NMapsMap \
+          -output binaries/iphoneos/NMapsMap.framework/NMapsMap \
+          -extract arm64 \
+          -extract armv7
+          
+      - name: Create a thin binary for iphonesimulator
+        run: |
+          mkdir -p binaries/iphonesimulator
+          cp -a upstream_repo/framework/NMapsMap.framework binaries/iphonesimulator/NMapsMap.framework
+          xcrun lipo binaries/iphonesimulator/NMapsMap.framework/NMapsMap \
+          -output binaries/iphonesimulator/NMapsMap.framework/NMapsMap \
+          -extract i386 \
+          -extract x86_64
+        
+      - name: Create an XCFramework
+        working-directory: binaries
+        run: |
+          xcodebuild -create-xcframework \
+          -framework iphoneos/NMapsMap.framework \
+          -framework iphonesimulator/NMapsMap.framework \
+          -output NMapsMap.xcframework
+        
+      - name: Create a ZIP archive
+        working-directory: binaries
+        run: zip -r -X NMapsMap.xcframework.zip NMapsMap.xcframework
+        
+      - name: Estimate an asset URL
+        run: |
+          url=https://github.com/${{ github.repository }}/releases/download/${{ matrix.tag }}/NMapsMap.xcframework.zip
+          echo "url=$url" >> $GITHUB_ENV
+          echo $url
+        
+      - name: Compute a checksum from the ZIP archive
+        working-directory: working_repo
+        run: |
+          touch Package.swift
+          checksum=$(swift package compute-checksum ../binaries/NMapsMap.xcframework.zip)
+          echo "checksum=$checksum" >> $GITHUB_ENV
+          echo $checksum
+      
+      - name: Generate Package.swift with URL and checksum
+        working-directory: working_repo
+        run: |
+          sed -e "s|<#url#>|${{ env.url }}|g" -e "s|<#checksum#>|${{ env.checksum }}|g" .Package.template.swift > Package.swift
+          cat Package.swift
+        
+      - name: Setup Git configurations
+        working-directory: working_repo
+        run: |
+          git config user.name "${{ env.git_config_user_name }}"
+          git config user.email "${{ env.git_config_user_email }}"
+      
+      - name: Show remotes in repository
+        working-directory: working_repo
+        run: git remote
+        
+      - name: Add, commit and push to ${{ github.repository }}
+        working-directory: working_repo
+        # 태그를 미리 지정하지 않으면 create-release 액션이 이전 커밋에 태그를 지정하고 릴리즈하는 문제가 발생한다.
+        # TODO: Pull
+        run: |
+          git add -A
+          git commit -m "Bump to ${{ matrix.tag }}"
+          git tag ${{ matrix.tag }}
+          git pull --rebase
+          git push origin HEAD
+          git push --tags origin HEAD
+      
+      - name: Create a release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tag_name: ${{ matrix.tag }}
+        
+      - name: Upload a release asset
+        id: upload_release_asset 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: binaries/NMapsMap.xcframework.zip
+          asset_name: NMapsMap.xcframework.zip
+          asset_content_type: application/zip
+        
+      - name: Check asset URLs
+        run: |
+          echo "${{ env.url }}"
+          echo "${{ steps.upload_release_asset.outputs.browser_download_url }}"
+        
+      - name: List all files in working directory
+        run: find .
