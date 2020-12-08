@@ -8,6 +8,16 @@ on:
 env:
   upstream_repo_owner: 'navermaps'
   upstream_repo_name: 'NMapsMap'
+  function_semver: |
+    function(tag) {
+      try {
+        const regExp = /\d*\.\d*\.\d*.*/;
+        const prefix = "v";
+        return prefix + regExp.exec(tag)[0];
+      } catch {
+        return tag;
+      }
+    }
 
 jobs:
   check_pat:
@@ -68,10 +78,11 @@ jobs:
         uses: actions/github-script@v3
         with:
           script: |
+            const semver = ${{ env.function_semver }};
             const workingRepoTags = ${{ steps.list_tags_working.outputs.workingRepoTags }};
             const upstreamRepoTags = ${{ steps.list_tags_upstream.outputs.upstreamRepoTags }};
-            const removedTags = workingRepoTags.filter(tag => !upstreamRepoTags.includes(tag));
-            const addedTags = upstreamRepoTags.filter(tag => !workingRepoTags.includes(tag));
+            const removedTags = workingRepoTags.filter(tag => !upstreamRepoTags.map(semver).includes(tag));
+            const addedTags = upstreamRepoTags.filter(tag => !workingRepoTags.includes(semver(tag)));
             core.setOutput("removedTags", removedTags);
             core.setOutput("addedTags", addedTags);
             console.log("removedTags: ", removedTags);
