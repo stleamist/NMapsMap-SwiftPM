@@ -38,9 +38,6 @@ jobs:
           ref: ${{ matrix.tag.src }}
           path: upstream_repo
           lfs: true
-          # 모든 브랜치와 태그의 히스토리를 가져온다.
-          # 그렇지 않으면 git describe --tags 명령어가 태그를 불러올 수 없다.
-          # fetch-depth: 0
         
       - name: Check architecture types in the binary
         run: xcrun lipo upstream_repo/framework/NMapsMap.framework/NMapsMap -archs
@@ -108,7 +105,6 @@ jobs:
       - name: Add, commit and push to ${{ github.repository }}
         working-directory: working_repo
         # 태그를 미리 지정하지 않으면 create-release 액션이 이전 커밋에 태그를 지정하고 릴리즈하는 문제가 발생한다.
-        # TODO: Pull
         run: |
           git add -A
           git commit -m "Bump to ${{ matrix.tag.dest }}"
