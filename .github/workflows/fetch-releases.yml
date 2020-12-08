@@ -82,7 +82,7 @@ jobs:
             const workingRepoTags = ${{ steps.list_tags_working.outputs.workingRepoTags }};
             const upstreamRepoTags = ${{ steps.list_tags_upstream.outputs.upstreamRepoTags }};
             const removedTags = workingRepoTags.filter(tag => !upstreamRepoTags.map(semver).includes(tag));
-            const addedTags = upstreamRepoTags.filter(tag => !workingRepoTags.includes(semver(tag)));
+            const addedTags = upstreamRepoTags.filter(tag => !workingRepoTags.includes(semver(tag))).map(tag => ({ src: tag, dest: semver(tag) }));
             core.setOutput("removedTags", removedTags);
             core.setOutput("addedTags", addedTags);
             console.log("removedTags: ", removedTags);

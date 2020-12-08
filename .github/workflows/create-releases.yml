@@ -4,30 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       tags:
-        # TODO: [{ srcTag: "release/3.0.0", destTag: "v3.0.0" }] 형태로 받아보기
         description: 'Tags (JSON)'
         required: true
-        default: '["release/1.0.0"]'
+        default: '[{ src: "release/1.0.0", dest: "v1.0.0" }]'
 
 env:
   upstream_repo_full_name: 'navermaps/NMapsMap'
   git_config_user_name: 'github-actions'
   git_config_user_email: '41898282+github-actions[bot]@users.noreply.github.com'
-  function_semver: |
-    function(tag) {
-      try {
-        const regExp = /\d*\.\d*\.\d*.*/;
-        const prefix = "v";
-        return prefix + regExp.exec(tag)[0];
-      } catch {
-        return tag;
-      }
-    }
 
 # TODO: Assertion 추가하기
 jobs:
   create-release:
-    name: Create a release
+    name: Create a release ${{ matrix.tag.dest }}
     strategy:
       max-parallel: 1
       fail-fast: true
@@ -42,11 +31,11 @@ jobs:
           ref: ${{ github.ref }}
           path: working_repo
       
-      - name: Checkout ${{ env.upstream_repo_full_name }} ${{ matrix.tag }}
+      - name: Checkout ${{ env.upstream_repo_full_name }} ${{ matrix.tag.src }}
         uses: actions/checkout@v2
         with:
           repository: ${{ env.upstream_repo_full_name }}
-          ref: ${{ matrix.tag }}
+          ref: ${{ matrix.tag.src }}
           path: upstream_repo
           lfs: true
           # 모든 브랜치와 태그의 히스토리를 가져온다.
@@ -85,23 +74,10 @@ jobs:
       - name: Create a ZIP archive
         working-directory: binaries
         run: zip -r -X NMapsMap.xcframework.zip NMapsMap.xcframework
-      
-      # TODO: 이름 다듬기
-      # TODO: env 또는 output 일원화하기
-      - name: semver
-        id: semver
-        uses: actions/github-script@v3
-        with:
-          script: |
-            const semver = ${{ env.function_semver }};
-            const tag = '${{ matrix.tag }}';
-            const semveredTag = semver(tag);
-            core.setOutput("semveredTag", semveredTag);
-            console.log("semveredTag: ", semveredTag);
         
       - name: Estimate an asset URL
         run: |
-          url=https://github.com/${{ github.repository }}/releases/download/${{ steps.semver.outputs.semveredTag }}/NMapsMap.xcframework.zip
+          url=https://github.com/${{ github.repository }}/releases/download/${{ matrix.tag.dest }}/NMapsMap.xcframework.zip
           echo "url=$url" >> $GITHUB_ENV
           echo $url
         
@@ -135,8 +111,8 @@ jobs:
         # TODO: Pull
         run: |
           git add -A
-          git commit -m "Bump to ${{ steps.semver.outputs.semveredTag }}"
-          git tag ${{ steps.semver.outputs.semveredTag }}
+          git commit -m "Bump to ${{ matrix.tag.dest }}"
+          git tag ${{ matrix.tag.dest }}
           git pull --rebase
           git push origin HEAD
           git push --tags origin HEAD
@@ -147,7 +123,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          tag_name: ${{ steps.semver.outputs.semveredTag }}
+          tag_name: ${{ matrix.tag.dest }}
         
       - name: Upload a release asset
         id: upload_release_asset 
