@@ -42,7 +42,7 @@
 Add the following line to the `dependencies` in your [`Package.swift`](https://developer.apple.com/documentation/swift_packages/package) file:
 
 ```swift
-.package(url: "https://github.com/stleamist/NMapsMap-SwiftPM.git", .upToNextMajor(from: "3.10.0"))
+.package(name: "NMapsMap", url: "https://github.com/stleamist/NMapsMap-SwiftPM.git", .upToNextMajor(from: "3.10.0"))
 ```
 
 Next, add `NMapsMap` as a dependency for your targets:
@@ -61,7 +61,7 @@ import PackageDescription
 let package = Package(
     name: "MyPackage",
     dependencies: [
-        .package(url: "https://github.com/stleamist/NMapsMap-SwiftPM.git", .upToNextMajor(from: "3.10.0"))
+        .package(name: "NMapsMap", url: "https://github.com/stleamist/NMapsMap-SwiftPM.git", .upToNextMajor(from: "3.10.0"))
     ],
     targets: [
         .target(name: "MyTarget", dependencies: ["NMapsMap"])
